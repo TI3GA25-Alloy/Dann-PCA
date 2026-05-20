@@ -1,65 +1,271 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Upload, Cpu, UserCheck, BarChart3, Loader2, ArrowRight, Maximize2, Minimize2 } from 'lucide-react';
+import { 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
+} from 'recharts';
+import { 
+  Upload, Cpu, UserCheck, BarChart3, Loader2, 
+  ArrowRight, LayoutDashboard, 
+  BookOpen, Image as ImageIcon, Info, ChevronRight,
+  RefreshCw, CheckCircle2, AlertCircle, Languages
+} from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
 
+type Lang = 'en' | 'id';
+
+const translations = {
+  en: {
+    subtitle: "Image Decomposition & Face Subspace",
+    nav_compression: "Compression",
+    nav_recognition: "Recognition",
+    nav_docs: "Documentation",
+    status_api: "API Connected",
+    lab_version: "Matrix Lab v1.0",
+    lab_desc: "Standard PCA Subspace",
+    tab_pca_title: "Image Decomposition",
+    tab_esm_title: "Face Subspace",
+    tab_docs_title: "System Guide",
+    pca_input: "Input Matrix",
+    pca_upload: "Upload Source Image",
+    pca_upload_hint: "PNG, JPG up to 10MB",
+    pca_k: "Components",
+    pca_k_hint: "Target Rank (k)",
+    pca_btn: "Process Decomposition",
+    pca_note_title: "Analysis Note",
+    pca_note_desc: "Reducing k significantly increases compression but may lead to artifacting. Optimal k is usually where the cumulative variance stabilizes.",
+    pca_comparison: "Visual Comparison",
+    pca_split: "Split View",
+    pca_original: "Original (Input)",
+    pca_reconstructed: "Reconstructed",
+    pca_variance: "Variance Statistics",
+    pca_no_data: "No data to project",
+    pca_stats_note: "The area above shows the cumulative energy captured by the first k eigenvectors. For efficient compression, aim for the point where the curve starts to level off (the 'elbow').",
+    esm_title: "Eigenface Subspace",
+    esm_desc: "Trained on Olivetti High-Dimensional Dataset",
+    esm_btn_train: "Initialize Basis",
+    esm_btn_ready: "Subspace Ready",
+    esm_alert_title: "Subspace Required",
+    esm_alert_desc: "You must initialize the subspace before projecting faces. This loads the Olivetti dataset into the principal component basis.",
+    esm_source: "Subject Matrix (Source)",
+    esm_target: "Subject Matrix (Target)",
+    esm_import: "Select Source",
+    esm_btn_compare: "Compute Subspace Distance",
+    esm_sim: "Similarity Coefficient",
+    esm_dist: "Euclidean Distance",
+    esm_conf: "Confidence Level",
+    esm_high: "High",
+    esm_mod: "Moderate",
+    esm_low: "Low",
+    docs_title: "Mathematical Foundation",
+    docs_intro: "This platform leverages Principal Component Analysis to map high-dimensional visual data into an optimized feature space, enabling efficient representation and pattern recognition.",
+    docs_decomp: "Decomposition",
+    docs_decomp_desc: "By applying SVD to image matrices, we extract orthogonal eigenvectors. Retaining the top k components preserves the structural integrity while shedding redundant data.",
+    docs_proj: "Projections",
+    docs_proj_desc: "Face recognition treats images as vectors in a large space. PCA finds a lower-dimensional 'face space' where relative distances between subjects are maintained.",
+    docs_step1: "Upload Data",
+    docs_step1_desc: "Import image matrices for analysis into the secure lab environment.",
+    docs_step2: "Configure k",
+    docs_step2_desc: "Adjust the rank parameter to control fidelity vs. compression ratio.",
+    docs_step3: "Validate",
+    docs_step3_desc: "Review variance statistics and similarity coefficients for accuracy."
+  },
+  id: {
+    subtitle: "Dekomposisi Gambar & Subspace Wajah",
+    nav_compression: "Kompresi",
+    nav_recognition: "Pengenalan",
+    nav_docs: "Dokumentasi",
+    status_api: "API Terhubung",
+    lab_version: "Lab Matriks v1.0",
+    lab_desc: "Subspace PCA Standar",
+    tab_pca_title: "Dekomposisi Gambar",
+    tab_esm_title: "Subspace Wajah",
+    tab_docs_title: "Panduan Sistem",
+    pca_input: "Matriks Input",
+    pca_upload: "Unggah Gambar Sumber",
+    pca_upload_hint: "PNG, JPG hingga 10MB",
+    pca_k: "Komponen",
+    pca_k_hint: "Rank Target (k)",
+    pca_btn: "Proses Dekomposisi",
+    pca_note_title: "Catatan Analisis",
+    pca_note_desc: "Mengurangi k meningkatkan kompresi secara signifikan tetapi dapat menyebabkan artifak. k optimal biasanya berada di titik di mana varians kumulatif stabil.",
+    pca_comparison: "Perbandingan Visual",
+    pca_split: "Tampilan Terpisah",
+    pca_original: "Orisinal (Input)",
+    pca_reconstructed: "Rekonstruksi",
+    pca_variance: "Statistik Varians",
+    pca_no_data: "Tidak ada data untuk diproyeksikan",
+    pca_stats_note: "Area di atas menunjukkan energi kumulatif yang ditangkap oleh k eigenvector pertama. Untuk kompresi yang efisien, targetkan titik di mana kurva mulai mendatar (titik 'siku').",
+    esm_title: "Subspace Eigenface",
+    esm_desc: "Dilatih pada Dataset Dimensi Tinggi Olivetti",
+    esm_btn_train: "Inisialisasi Basis",
+    esm_btn_ready: "Subspace Siap",
+    esm_alert_title: "Subspace Diperlukan",
+    esm_alert_desc: "Anda harus menginisialisasi subspace sebelum memproyeksikan wajah. Ini memuat dataset Olivetti ke dalam basis komponen utama.",
+    esm_source: "Matriks Subjek (Sumber)",
+    esm_target: "Matriks Subjek (Target)",
+    esm_import: "Pilih Sumber",
+    esm_btn_compare: "Hitung Jarak Subspace",
+    esm_sim: "Koefisien Kemiripan",
+    esm_dist: "Jarak Euclidean",
+    esm_conf: "Tingkat Kepercayaan",
+    esm_high: "Tinggi",
+    esm_mod: "Sedang",
+    esm_low: "Rendah",
+    docs_title: "Fondasi Matematika",
+    docs_intro: "Platform ini memanfaatkan Principal Component Analysis untuk memetakan data visual dimensi tinggi ke dalam ruang fitur yang dioptimalkan, memungkinkan representasi dan pengenalan pola yang efisien.",
+    docs_decomp: "Dekomposisi",
+    docs_decomp_desc: "Dengan menerapkan SVD ke matriks gambar, kita mengekstrak eigenvector ortogonal. Mempertahankan k komponen teratas menjaga integritas struktural sambil membuang data redundan.",
+    docs_proj: "Proyeksi",
+    docs_proj_desc: "Pengenalan wajah memperlakukan gambar sebagai vektor dalam ruang besar. PCA menemukan 'ruang wajah' berdimensi rendah di mana jarak relatif antar subjek dipertahankan.",
+    docs_step1: "Unggah Data",
+    docs_step1_desc: "Impor matriks gambar untuk analisis ke dalam lingkungan lab yang aman.",
+    docs_step2: "Konfigurasi k",
+    docs_step2_desc: "Sesuaikan parameter rank untuk mengontrol rasio fidelitas vs kompresi.",
+    docs_step3: "Validasi",
+    docs_step3_desc: "Tinjau statistik varians dan koefisien kemiripan untuk akurasi."
+  }
+};
+
+// Custom Tooltip for Recharts
+const CustomTooltip = ({ active, payload, label, lang }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white border border-slate-200 p-3 shadow-xl rounded-lg">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+          {lang === 'en' ? 'Component' : 'Komponen'} {label}
+        </p>
+        <p className="text-sm font-semibold text-slate-900">
+          Variance: <span className="text-indigo-600">{payload[0].value.toFixed(2)}%</span>
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
 const App = () => {
   const [activeTab, setActiveTab] = useState<'pca' | 'esm' | 'docs'>('pca');
+  const [lang, setLang] = useState<Lang>('en');
+  const [isSidebarOpen] = useState(true);
+  
+  const t = translations[lang];
+
+  // Load Instrument Sans font
+  useEffect(() => {
+    const link = document.createElement('link');
+    link.href = 'https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+  }, []);
 
   return (
-    <div className="min-h-screen bg-white text-[#1a1a1a] font-sans selection:bg-[#1a1a1a] selection:text-white">
-      {/* Editorial Header */}
-      <header className="px-6 md:px-12 py-12 border-b border-[#eeeeee]">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-end gap-8">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-bold tracking-[0.2em] uppercase border border-[#1a1a1a] px-2 py-0.5">Lab 01</span>
-              <h1 className="text-4xl font-light tracking-tight italic">PCA Vision</h1>
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-['Instrument_Sans',sans-serif] flex">
+      {/* Sidebar */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 transition-transform duration-300 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:translate-x-0`}>
+        <div className="h-full flex flex-col">
+          <div className="p-6 border-b border-slate-100 flex items-center gap-3">
+            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+              <Cpu className="w-5 h-5 text-white" />
             </div>
-            <p className="text-sm text-[#777] max-w-md font-medium leading-relaxed">
-              Computational linear algebra for image decomposition and facial subspace recognition. 
-              Precision-focused principal component analysis.
-            </p>
+            <h1 className="text-xl font-bold tracking-tight">PCA <span className="text-indigo-600">Vision</span></h1>
           </div>
           
-          <nav className="flex gap-1 bg-[#f5f5f5] p-1 rounded-sm">
-            <button 
-              onClick={() => setActiveTab('pca')}
-              className={`px-6 py-2 text-[11px] font-bold uppercase tracking-widest transition-all ${activeTab === 'pca' ? 'bg-white shadow-sm text-[#1a1a1a]' : 'text-[#999] hover:text-[#1a1a1a]'}`}
-            >
-              Compression
-            </button>
-            <button 
-              onClick={() => setActiveTab('esm')}
-              className={`px-6 py-2 text-[11px] font-bold uppercase tracking-widest transition-all ${activeTab === 'esm' ? 'bg-white shadow-sm text-[#1a1a1a]' : 'text-[#999] hover:text-[#1a1a1a]'}`}
-            >
-              Recognition
-            </button>
-            <button 
-              onClick={() => setActiveTab('docs')}
-              className={`px-6 py-2 text-[11px] font-bold uppercase tracking-widest transition-all ${activeTab === 'docs' ? 'bg-white shadow-sm text-[#1a1a1a]' : 'text-[#999] hover:text-[#1a1a1a]'}`}
-            >
-              Docs
-            </button>
+          <nav className="flex-1 p-4 space-y-2">
+            <SidebarLink 
+              icon={<LayoutDashboard className="w-4 h-4" />} 
+              label={t.nav_compression} 
+              active={activeTab === 'pca'} 
+              onClick={() => setActiveTab('pca')} 
+            />
+            <SidebarLink 
+              icon={<UserCheck className="w-4 h-4" />} 
+              label={t.nav_recognition} 
+              active={activeTab === 'esm'} 
+              onClick={() => setActiveTab('esm')} 
+            />
+            <SidebarLink 
+              icon={<BookOpen className="w-4 h-4" />} 
+              label={t.nav_docs} 
+              active={activeTab === 'docs'} 
+              onClick={() => setActiveTab('docs')} 
+            />
           </nav>
+
+          <div className="px-6 py-4 border-t border-slate-100">
+            <button 
+              onClick={() => setLang(lang === 'en' ? 'id' : 'en')}
+              className="w-full flex items-center justify-between px-4 py-2 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors text-[10px] font-bold uppercase tracking-widest text-slate-500"
+            >
+              <div className="flex items-center gap-2">
+                <Languages className="w-3.5 h-3.5" />
+                <span>{lang === 'en' ? 'English' : 'Indonesian'}</span>
+              </div>
+              <span className="text-indigo-600">Change</span>
+            </button>
+          </div>
+          
+          <div className="p-4 border-t border-slate-100">
+            <div className="bg-slate-50 rounded-xl p-4">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status</p>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                <span className="text-xs font-medium text-slate-600">{t.status_api}</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </header>
+      </aside>
 
-      <main className="max-w-7xl mx-auto px-6 md:px-12 py-12">
-        {activeTab === 'pca' ? <PCATab /> : activeTab === 'esm' ? <ESMTab /> : <DocsTab />}
-      </main>
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-40">
+          <div className="flex items-center gap-4">
+            <h2 className="text-sm font-semibold text-slate-500 capitalize">
+              {activeTab === 'pca' ? t.nav_compression : activeTab === 'esm' ? t.nav_recognition : t.nav_docs}
+            </h2>
+            <ChevronRight className="w-4 h-4 text-slate-300" />
+            <span className="text-sm font-bold text-slate-900">
+              {activeTab === 'pca' ? t.tab_pca_title : activeTab === 'esm' ? t.tab_esm_title : t.tab_docs_title}
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-bold text-slate-900 leading-none">{t.lab_version}</p>
+              <p className="text-[10px] text-slate-400 font-medium">{t.lab_desc}</p>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+              <Info className="w-4 h-4 text-slate-400" />
+            </div>
+          </div>
+        </header>
 
-      <footer className="px-12 py-12 border-t border-[#eeeeee] flex justify-between items-center mt-24">
-        <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#bbb]">Linear Algebra Matrix</span>
-        <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#bbb]">© 2026 Studio PCA</span>
-      </footer>
+        <main className="flex-1 p-8 overflow-y-auto">
+          <div className="max-w-6xl mx-auto">
+            {activeTab === 'pca' ? <PCATab t={t} lang={lang} /> : activeTab === 'esm' ? <ESMTab t={t} /> : <DocsTab t={t} />}
+          </div>
+        </main>
+      </div>
     </div>
   );
 };
 
-const PCATab = () => {
+const SidebarLink = ({ icon, label, active, onClick }: any) => (
+  <button 
+    onClick={onClick}
+    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+      active 
+        ? 'bg-indigo-50 text-indigo-600 shadow-sm' 
+        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+    }`}
+  >
+    {icon}
+    {label}
+  </button>
+);
+
+const PCATab = ({ t, lang }: { t: any, lang: Lang }) => {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [compressed, setCompressed] = useState<string | null>(null);
@@ -93,101 +299,159 @@ const PCATab = () => {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 animate-in fade-in slide-in-from-bottom-2 duration-700">
-      {/* Controls */}
-      <div className="lg:col-span-4 space-y-12">
-        <section className="space-y-4">
-          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#999]">Source Image</label>
-          <div className="relative aspect-square border border-[#eeeeee] flex items-center justify-center group overflow-hidden bg-[#fafafa]">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* Configuration Card */}
+      <div className="lg:col-span-4 space-y-6">
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
+              <ImageIcon className="w-4 h-4" />
+            </div>
+            <h3 className="text-lg font-bold">{t.pca_input}</h3>
+          </div>
+
+          <div 
+            className="relative aspect-square rounded-xl border-2 border-dashed border-slate-200 hover:border-indigo-400 bg-slate-50 transition-all flex flex-col items-center justify-center p-4 group cursor-pointer overflow-hidden"
+          >
             {preview ? (
-              <img src={preview} className="w-full h-full object-cover grayscale transition-all duration-500 group-hover:grayscale-0 group-hover:scale-105" />
+              <img src={preview} className="w-full h-full object-cover rounded-lg group-hover:opacity-90 transition-opacity" />
             ) : (
-              <div className="text-center space-y-2">
-                <Upload className="w-5 h-5 mx-auto text-[#ccc]" />
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#bbb]">Click to Import</p>
-              </div>
+              <>
+                <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center mb-4">
+                  <Upload className="w-6 h-6 text-slate-400" />
+                </div>
+                <p className="text-xs font-bold text-slate-900 mb-1">{t.pca_upload}</p>
+                <p className="text-[10px] text-slate-400 font-medium">{t.pca_upload_hint}</p>
+              </>
             )}
             <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleUpload} />
           </div>
-        </section>
 
-        <section className="space-y-6">
-          <div className="flex justify-between items-end">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#999]">Eigenvalue $k$</label>
-            <span className="text-4xl font-light italic">{k}</span>
+          <div className="mt-8 space-y-6">
+            <div className="flex justify-between items-end">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t.pca_k}</p>
+                <p className="text-3xl font-bold text-indigo-600">{k}</p>
+              </div>
+              <p className="text-[10px] text-slate-400 font-medium pb-1">{t.pca_k_hint}</p>
+            </div>
+            <input 
+              type="range" min="1" max="200" value={k} 
+              onChange={(e) => setK(parseInt(e.target.value))}
+              className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+            />
+            <button 
+              onClick={runPCA}
+              disabled={loading || !file}
+              className="w-full py-4 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all disabled:opacity-40 disabled:hover:bg-indigo-600 flex items-center justify-center gap-3"
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>{t.pca_btn} <ArrowRight className="w-4 h-4" /></>}
+            </button>
           </div>
-          <input 
-            type="range" min="1" max="200" value={k} 
-            onChange={(e) => setK(parseInt(e.target.value))}
-            className="w-full h-[1px] bg-[#ddd] appearance-none cursor-pointer accent-[#1a1a1a]"
-          />
-          <button 
-            onClick={runPCA}
-            disabled={loading || !file}
-            className="w-full py-4 border border-[#1a1a1a] text-[11px] font-bold uppercase tracking-[0.3em] hover:bg-[#1a1a1a] hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#1a1a1a] flex items-center justify-center gap-3"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Execute Decomposition <ArrowRight className="w-3 h-3" /></>}
-          </button>
-        </section>
+        </div>
+
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+          <div className="flex items-center gap-3 mb-4 text-slate-400">
+            <div className="p-1 bg-slate-50 rounded">
+              <Info className="w-3 h-3" />
+            </div>
+            <h4 className="text-[10px] font-bold uppercase tracking-wider">{t.pca_note_title}</h4>
+          </div>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {t.pca_note_desc}
+          </p>
+        </div>
       </div>
 
-      {/* Results */}
-      <div className="lg:col-span-8 space-y-16">
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-px bg-[#eeeeee] border border-[#eeeeee]">
-          <div className="bg-white p-8 space-y-6">
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#999]">Original Matrix</span>
-              <Minimize2 className="w-3 h-3 text-[#ddd]" />
+      {/* Results Viewport */}
+      <div className="lg:col-span-8 space-y-8">
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-slate-50 rounded-lg flex items-center justify-center text-slate-400">
+                <BarChart3 className="w-4 h-4" />
+              </div>
+              <h3 className="text-lg font-bold">{t.pca_comparison}</h3>
             </div>
-            <div className="aspect-video bg-[#fafafa] overflow-hidden flex items-center justify-center">
-              {preview ? <img src={preview} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700" /> : <div className="text-[#eee] font-light text-6xl">01</div>}
-            </div>
-          </div>
-          <div className="bg-white p-8 space-y-6">
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#1a1a1a]">Reconstructed</span>
-              <Maximize2 className="w-3 h-3 text-[#1a1a1a]" />
-            </div>
-            <div className="aspect-video bg-[#fafafa] overflow-hidden flex items-center justify-center">
-              {compressed ? <img src={compressed} className="w-full h-full object-cover" /> : <div className="text-[#eee] font-light text-6xl">02</div>}
+            <div className="flex gap-2">
+              <span className="px-3 py-1 bg-slate-50 text-slate-500 text-[10px] font-bold rounded-full uppercase tracking-wider">{t.pca_split}</span>
             </div>
           </div>
-        </section>
 
-        <section className="space-y-8 border-t border-[#eeeeee] pt-12">
-          <div className="flex items-center gap-4">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#999]">Exploratory Data Analysis</label>
-            <div className="h-[1px] flex-1 bg-[#eeeeee]" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t.pca_original}</p>
+                <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+              </div>
+              <div className="aspect-[4/3] bg-slate-50 rounded-xl overflow-hidden border border-slate-100 flex items-center justify-center">
+                {preview ? <img src={preview} className="w-full h-full object-cover" /> : <p className="text-slate-200 font-bold text-4xl italic">01</p>}
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest">{t.pca_reconstructed}</p>
+                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+              </div>
+              <div className="aspect-[4/3] bg-indigo-50/20 rounded-xl overflow-hidden border border-indigo-100 flex items-center justify-center">
+                {compressed ? <img src={compressed} className="w-full h-full object-cover" /> : <p className="text-slate-200 font-bold text-4xl italic">02</p>}
+              </div>
+            </div>
           </div>
-          <div className="h-64 w-full">
+        </div>
+
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
+              <BarChart3 className="w-4 h-4" />
+            </div>
+            <h3 className="text-lg font-bold">{t.pca_variance}</h3>
+          </div>
+
+          <div className="h-72 w-full">
             {varianceData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={varianceData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                  <defs>
+                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" hide />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#bbb' }} unit="%" />
-                  <Tooltip 
-                    contentStyle={{ border: '1px solid #eee', borderRadius: '0', boxShadow: 'none', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }}
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} unit="%" />
+                  <Tooltip content={<CustomTooltip lang={lang} />} />
+                  <Area 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="#4f46e5" 
+                    fillOpacity={1} 
+                    fill="url(#colorValue)" 
+                    strokeWidth={2}
                   />
-                  <Area type="stepAfter" dataKey="value" stroke="#1a1a1a" fill="#1a1a1a" fillOpacity={0.03} strokeWidth={1} />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex items-center justify-center h-full text-[10px] font-bold uppercase tracking-[0.2em] text-[#ddd]">
-                Await execution for statistical projection
+              <div className="flex flex-col items-center justify-center h-full space-y-3 bg-slate-50 rounded-xl border border-slate-100">
+                <BarChart3 className="w-8 h-8 text-slate-200" />
+                <p className="text-xs font-bold text-slate-300 uppercase tracking-widest">{t.pca_no_data}</p>
               </div>
             )}
           </div>
-          <p className="text-[11px] text-[#777] leading-relaxed max-w-xl italic">
-            Cumulative Explained Variance ratio across the spectrum. A higher $k$ integer increases fidelity by encompassing more variance within the subspace.
-          </p>
-        </section>
+          <div className="mt-6 flex items-start gap-3 p-4 bg-slate-50 rounded-xl">
+            <Info className="w-4 h-4 text-slate-400 mt-0.5" />
+            <p className="text-[11px] text-slate-500 leading-relaxed italic">
+              {t.pca_stats_note}
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
-const ESMTab = () => {
+const ESMTab = ({ t }: { t: any }) => {
   const [child, setChild] = useState<{f: File, p: string} | null>(null);
   const [adult, setAdult] = useState<{f: File, p: string} | null>(null);
   const [result, setResult] = useState<{similarity: number, distance: number} | null>(null);
@@ -216,44 +480,76 @@ const ESMTab = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-24 animate-in fade-in slide-in-from-bottom-2 duration-700">
-      <section className="flex flex-col md:flex-row items-center justify-between border-b border-[#eeeeee] pb-12 gap-8">
-        <div className="space-y-4">
-          <h2 className="text-3xl font-light italic">Eigenface Subspace</h2>
-          <p className="text-[11px] font-bold uppercase tracking-widest text-[#999]">Database: Olivetti Human Faces</p>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-8">
+        <div className="flex items-center gap-6">
+          <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+            <UserCheck className="w-8 h-8" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">{t.esm_title}</h2>
+            <p className="text-sm font-medium text-slate-400">{t.esm_desc}</p>
+          </div>
         </div>
+        
         <button 
           onClick={train} disabled={training || trained}
-          className="px-10 py-4 border border-[#1a1a1a] text-[11px] font-bold uppercase tracking-[0.3em] hover:bg-[#1a1a1a] hover:text-white transition-all disabled:opacity-20 flex items-center gap-3"
+          className={`px-8 py-4 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${
+            trained 
+              ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default' 
+              : 'bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 active:scale-95 shadow-sm shadow-slate-100'
+          }`}
         >
-          {training ? <Loader2 className="w-4 h-4 animate-spin" /> : trained ? 'Ready' : 'Initialize Subspace'}
+          {training ? <Loader2 className="w-4 h-4 animate-spin" /> : trained ? <><CheckCircle2 className="w-4 h-4" /> {t.esm_btn_ready}</> : t.esm_btn_train}
         </button>
-      </section>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-        <FaceBox label="Matrix Alpha (Temporal T0)" val={child} set={setChild} />
-        <FaceBox label="Matrix Beta (Temporal T1)" val={adult} set={setAdult} />
       </div>
 
-      <div className="flex flex-col items-center gap-12">
+      {!trained && (
+        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-6 flex items-start gap-4">
+          <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-amber-900 mb-1">{t.esm_alert_title}</p>
+            <p className="text-xs text-amber-700 font-medium">{t.esm_alert_desc}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <FaceBox label={t.esm_source} val={child} set={setChild} color="indigo" t={t} />
+        <FaceBox label={t.esm_target} val={adult} set={setAdult} color="slate" t={t} />
+      </div>
+
+      <div className="flex flex-col items-center pt-8">
         <button 
           onClick={compare}
           disabled={!child || !adult || loading || !trained}
-          className="px-16 py-6 border border-[#1a1a1a] text-[12px] font-bold uppercase tracking-[0.4em] hover:bg-[#1a1a1a] hover:text-white transition-all disabled:opacity-20 flex items-center gap-4"
+          className="px-12 py-5 bg-indigo-600 text-white rounded-2xl text-base font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-40 flex items-center gap-4"
         >
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Compute Subspace Distance <UserCheck className="w-4 h-4" /></>}
+          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>{t.esm_btn_compare} <RefreshCw className="w-4 h-4" /></>}
         </button>
 
         {result && (
-          <div className="w-full space-y-8 animate-in zoom-in-95 duration-500 text-center">
-            <div className="space-y-2">
-              <span className="text-[10px] font-bold uppercase tracking-[0.4em] text-[#bbb]">Similarity Coefficient</span>
-              <div className="text-8xl font-light tracking-tighter italic">{result.similarity}%</div>
+          <div className="mt-16 w-full max-w-2xl bg-white rounded-3xl p-10 shadow-xl border border-slate-100 animate-in zoom-in-95 duration-500 text-center relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-slate-50">
+              <div className="h-full bg-indigo-600 transition-all duration-1000 ease-out" style={{ width: `${result.similarity}%` }} />
             </div>
-            <div className="max-w-md mx-auto h-[1px] bg-[#eeeeee] relative">
-              <div className="absolute top-1/2 left-0 h-[3px] bg-[#1a1a1a] -translate-y-1/2 transition-all duration-1000" style={{ width: `${result.similarity}%` }} />
+            
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.4em] mb-4">{t.esm_sim}</p>
+            <div className="text-[120px] font-bold tracking-tighter text-indigo-600 leading-none mb-6">
+              {Math.round(result.similarity)}<span className="text-4xl text-slate-200 ml-1">%</span>
             </div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#bbb]">Euclidean Delta: {result.distance}</p>
+            
+            <div className="inline-flex items-center gap-6 px-6 py-3 bg-slate-50 rounded-full border border-slate-100">
+              <div className="text-left">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">{t.esm_dist}</p>
+                <p className="text-sm font-bold text-slate-900">{result.distance.toFixed(4)}</p>
+              </div>
+              <div className="w-[1px] h-8 bg-slate-200" />
+              <div className="text-left">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">{t.esm_conf}</p>
+                <p className="text-sm font-bold text-slate-900">{result.similarity > 70 ? t.esm_high : result.similarity > 40 ? t.esm_mod : t.esm_low}</p>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -261,16 +557,21 @@ const ESMTab = () => {
   );
 };
 
-const FaceBox = ({ label, val, set }: any) => (
-  <div className="space-y-4">
-    <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#999]">{label}</label>
-    <div className="aspect-[4/5] bg-[#fafafa] border border-[#eeeeee] relative overflow-hidden group">
+const FaceBox = ({ label, val, set, color, t }: any) => (
+  <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
+    <div className="flex justify-between items-center">
+      <h4 className="text-sm font-bold text-slate-900">{label}</h4>
+      <div className={`w-2 h-2 rounded-full ${color === 'indigo' ? 'bg-indigo-500' : 'bg-slate-400'}`} />
+    </div>
+    <div className="aspect-[4/5] bg-slate-50 rounded-xl relative overflow-hidden group border border-slate-100">
       {val ? (
-        <img src={val.p} className="w-full h-full object-cover grayscale transition-all duration-500 group-hover:grayscale-0" />
+        <img src={val.p} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
       ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-[#ddd] space-y-4">
-          <Upload className="w-6 h-6" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">Import Matrix</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 space-y-4">
+          <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center">
+            <Upload className="w-5 h-5" />
+          </div>
+          <span className="text-xs font-bold uppercase tracking-widest">{t.esm_import}</span>
         </div>
       )}
       <input 
@@ -281,65 +582,57 @@ const FaceBox = ({ label, val, set }: any) => (
   </div>
 );
 
-const DocsTab = () => (
-  <div className="max-w-3xl mx-auto space-y-24 animate-in fade-in slide-in-from-bottom-2 duration-700">
-    <section className="space-y-8">
-      <h2 className="text-4xl font-light italic tracking-tight">System Documentation</h2>
-      <div className="h-[1px] w-24 bg-[#1a1a1a]" />
-      <p className="text-[#777] leading-relaxed italic">
-        This platform utilizes Principal Component Analysis (PCA) to decompose high-dimensional visual data into significant mathematical structures.
+const DocsTab = ({ t }: { t: any }) => (
+  <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="bg-white rounded-3xl p-10 shadow-sm border border-slate-200">
+      <h2 className="text-3xl font-bold tracking-tight mb-6">{t.docs_title}</h2>
+      <p className="text-slate-500 leading-relaxed mb-8">
+        {t.docs_intro}
       </p>
-    </section>
-
-    <div className="grid grid-cols-1 gap-24">
-      <article className="space-y-6">
-        <span className="text-[10px] font-bold uppercase tracking-[0.4em] text-[#bbb]">Module 01</span>
-        <h3 className="text-2xl font-light italic">Image Compression (PCA)</h3>
-        <div className="space-y-4 text-sm text-[#555] leading-relaxed">
-          <p>
-            Image compression via PCA works by identifying the "Principal Components" (eigenvectors) of the image matrix. 
-            By retaining only the top $k$ components with the highest variance (eigenvalues), we can reconstruct the image using significantly less data.
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+          <h3 className="text-lg font-bold mb-4 flex items-center gap-3">
+            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-indigo-600 shadow-sm">
+              <BarChart3 className="w-4 h-4" />
+            </div>
+            {t.docs_decomp}
+          </h3>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {t.docs_decomp_desc}
           </p>
-          <ul className="space-y-2 list-none border-l border-[#eee] pl-6 py-2">
-            <li><strong className="text-[#1a1a1a] uppercase text-[10px] tracking-widest block">Input $k$</strong> Lower values yield high compression but lossy results. Higher values preserve fidelity.</li>
-            <li><strong className="text-[#1a1a1a] uppercase text-[10px] tracking-widest block">EDA Chart</strong> Displays the cumulative explained variance. Aim for the "elbow" where adding more components provides diminishing returns.</li>
-          </ul>
         </div>
-      </article>
-
-      <article className="space-y-6 text-right">
-        <span className="text-[10px] font-bold uppercase tracking-[0.4em] text-[#bbb]">Module 02</span>
-        <h3 className="text-2xl font-light italic text-right">Face Recognition (ESM)</h3>
-        <div className="space-y-4 text-sm text-[#555] leading-relaxed">
-          <p>
-            The Eigenface Subspace Method (ESM) projects new face images into a mathematical "face space" constructed from a training dataset (Olivetti Faces).
+        
+        <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+          <h3 className="text-lg font-bold mb-4 flex items-center gap-3">
+            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-emerald-600 shadow-sm">
+              <UserCheck className="w-4 h-4" />
+            </div>
+            {t.docs_proj}
+          </h3>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {t.docs_proj_desc}
           </p>
-          <p>
-            Comparison is achieved by measuring the Euclidean distance between the projections of two different temporal states (e.g., childhood vs. adult) within this subspace.
-          </p>
-          <div className="inline-block border-r border-[#eee] pr-6 py-2 text-right">
-            <strong className="text-[#1a1a1a] uppercase text-[10px] tracking-widest block">Subspace Training</strong> Must be initialized before comparison to compute the mean face and basis vectors.
-          </div>
         </div>
-      </article>
+      </div>
+    </div>
 
-      <article className="space-y-6 pt-12 border-t border-[#eee]">
-        <h3 className="text-lg font-bold uppercase tracking-[0.2em] text-[#1a1a1a]">Usage Protocol</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-[11px] text-[#888] font-medium tracking-wide leading-relaxed">
-          <div className="space-y-2">
-            <span className="text-[#1a1a1a] font-bold italic">01. Import</span>
-            <p>Upload source matrices (JPG/PNG) into the relevant laboratory module.</p>
-          </div>
-          <div className="space-y-2">
-            <span className="text-[#1a1a1a] font-bold italic">02. Initialize</span>
-            <p>Set parameters ($k$ value) or train the eigenspace basis for face recognition.</p>
-          </div>
-          <div className="space-y-2">
-            <span className="text-[#1a1a1a] font-bold italic">03. Analyze</span>
-            <p>Inspect statistical charts and reconstruction deltas for precision validation.</p>
-          </div>
-        </div>
-      </article>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="text-2xl font-bold text-slate-200 mb-2">01.</div>
+        <h4 className="text-sm font-bold mb-2">{t.docs_step1}</h4>
+        <p className="text-xs text-slate-400">{t.docs_step1_desc}</p>
+      </div>
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="text-2xl font-bold text-indigo-100 mb-2">02.</div>
+        <h4 className="text-sm font-bold mb-2">{t.docs_step2}</h4>
+        <p className="text-xs text-slate-400">{t.docs_step2_desc}</p>
+      </div>
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="text-2xl font-bold text-slate-200 mb-2">03.</div>
+        <h4 className="text-sm font-bold mb-2">{t.docs_step3}</h4>
+        <p className="text-xs text-slate-400">{t.docs_step3_desc}</p>
+      </div>
     </div>
   </div>
 );
