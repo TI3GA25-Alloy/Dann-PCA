@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label
 } from 'recharts';
 import { 
   Upload, Cpu, UserCheck, BarChart3, Loader2, 
   ArrowRight, LayoutDashboard, 
   BookOpen, Image as ImageIcon, Info, ChevronRight,
-  RefreshCw, CheckCircle2, AlertCircle, Languages
+  RefreshCw, CheckCircle2, AlertCircle, Languages, Lock, Timer, Zap
 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
@@ -39,8 +39,12 @@ const translations = {
     pca_original: "Original (Input)",
     pca_reconstructed: "Reconstructed",
     pca_variance: "Variance Statistics",
+    pca_grayscale: "Grayscale Output",
     pca_no_data: "No data to project",
     pca_stats_note: "The area above shows the cumulative energy captured by the first k eigenvectors. For efficient compression, aim for the point where the curve starts to level off (the 'elbow').",
+    pca_processing_time: "Decomposition Time",
+    pca_elbow_90: "90% Threshold (Optimal)",
+    pca_elbow_95: "95% Threshold (High Fidelity)",
     esm_title: "Eigenface Subspace",
     esm_desc: "Trained on Olivetti High-Dimensional Dataset",
     esm_btn_train: "Initialize Basis",
@@ -57,6 +61,10 @@ const translations = {
     esm_high: "High",
     esm_mod: "Moderate",
     esm_low: "Low",
+    esm_processing_time: "Projection Time",
+    esm_no_face_warning: "Face not detected, using center-crop fallback.",
+    esm_eigenface_title: "Subspace Basis Components",
+    esm_eigenface_desc: "The first 10 'Eigenfaces' (principal components) extracted from the training dataset. These form the coordinate system for recognition.",
     docs_title: "Mathematical Foundation",
     docs_intro: "This platform leverages Principal Component Analysis to map high-dimensional visual data into an optimized feature space, enabling efficient representation and pattern recognition.",
     docs_decomp: "Decomposition",
@@ -96,6 +104,9 @@ const translations = {
     pca_variance: "Statistik Varians",
     pca_no_data: "Tidak ada data untuk diproyeksikan",
     pca_stats_note: "Area di atas menunjukkan energi kumulatif yang ditangkap oleh k eigenvector pertama. Untuk kompresi yang efisien, targetkan titik di mana kurva mulai mendatar (titik 'siku').",
+    pca_processing_time: "Waktu Dekomposisi",
+    pca_elbow_90: "Ambang 90% (Optimal)",
+    pca_elbow_95: "Ambang 95% (Fidelitas Tinggi)",
     esm_title: "Subspace Eigenface",
     esm_desc: "Dilatih pada Dataset Dimensi Tinggi Olivetti",
     esm_btn_train: "Inisialisasi Basis",
@@ -112,6 +123,10 @@ const translations = {
     esm_high: "Tinggi",
     esm_mod: "Sedang",
     esm_low: "Rendah",
+    esm_processing_time: "Waktu Proyeksi",
+    esm_no_face_warning: "Wajah tidak terdeteksi, menggunakan fallback center-crop.",
+    esm_eigenface_title: "Komponen Basis Subspace",
+    esm_eigenface_desc: "10 'Eigenface' pertama (komponen utama) yang diekstrak dari dataset pelatihan. Ini membentuk sistem koordinat untuk pengenalan.",
     docs_title: "Fondasi Matematika",
     docs_intro: "Platform ini memanfaatkan Principal Component Analysis untuk memetakan data visual dimensi tinggi ke dalam ruang fitur yang dioptimalkan, memungkinkan representasi dan pengenalan pola yang efisien.",
     docs_decomp: "Dekomposisi",
@@ -160,7 +175,7 @@ const App = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-['Instrument_Sans',sans-serif] flex">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-['Instrument_Sans',sans-serif] flex text-selection">
       {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 transition-transform duration-300 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:translate-x-0`}>
         <div className="h-full flex flex-col">
@@ -270,8 +285,10 @@ const PCATab = ({ t, lang }: { t: any, lang: Lang }) => {
   const [preview, setPreview] = useState<string | null>(null);
   const [compressed, setCompressed] = useState<string | null>(null);
   const [k, setK] = useState(50);
+  const [grayscale, setGrayscale] = useState(false);
   const [loading, setLoading] = useState(false);
   const [varianceData, setVarianceData] = useState<{name: number, value: number}[]>([]);
+  const [processingTime, setProcessingTime] = useState<number | null>(null);
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
@@ -287,16 +304,22 @@ const PCATab = ({ t, lang }: { t: any, lang: Lang }) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('k', k.toString());
+    formData.append('grayscale', grayscale.toString());
     try {
       const { data } = await axios.post(`${API_BASE}/api/compress`, formData);
       setCompressed(data.compressed_image);
       setVarianceData(data.variance_data.map((v: number, i: number) => ({ name: i + 1, value: v * 100 })));
+      setProcessingTime(data.processing_time);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
   };
+
+  // Find Elbow points
+  const elbow90 = varianceData.find(v => v.value >= 90)?.name;
+  const elbow95 = varianceData.find(v => v.value >= 95)?.name;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -340,6 +363,17 @@ const PCATab = ({ t, lang }: { t: any, lang: Lang }) => {
               onChange={(e) => setK(parseInt(e.target.value))}
               className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
             />
+            
+            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+              <label className="text-xs font-bold text-slate-600">{t.pca_grayscale}</label>
+              <button 
+                onClick={() => setGrayscale(!grayscale)}
+                className={`w-10 h-5 rounded-full transition-colors relative ${grayscale ? 'bg-indigo-600' : 'bg-slate-300'}`}
+              >
+                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${grayscale ? 'left-6' : 'left-1'}`} />
+              </button>
+            </div>
+
             <button 
               onClick={runPCA}
               disabled={loading || !file}
@@ -349,6 +383,16 @@ const PCATab = ({ t, lang }: { t: any, lang: Lang }) => {
             </button>
           </div>
         </div>
+
+        {processingTime && (
+          <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Timer className="w-4 h-4 text-emerald-600" />
+              <span className="text-xs font-bold text-emerald-900">{t.pca_processing_time}</span>
+            </div>
+            <span className="text-xs font-bold text-emerald-600">{processingTime}ms</span>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
           <div className="flex items-center gap-3 mb-4 text-slate-400">
@@ -408,10 +452,10 @@ const PCATab = ({ t, lang }: { t: any, lang: Lang }) => {
             <h3 className="text-lg font-bold">{t.pca_variance}</h3>
           </div>
 
-          <div className="h-72 w-full">
+          <div className="h-72 w-full relative">
             {varianceData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={varianceData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                <AreaChart data={varianceData} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/>
@@ -422,6 +466,19 @@ const PCATab = ({ t, lang }: { t: any, lang: Lang }) => {
                   <XAxis dataKey="name" hide />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} unit="%" />
                   <Tooltip content={<CustomTooltip lang={lang} />} />
+                  
+                  {/* Elbow Markers */}
+                  {elbow90 && (
+                    <ReferenceLine x={elbow90} stroke="#cbd5e1" strokeDasharray="3 3">
+                      <Label value={t.pca_elbow_90} position="top" fill="#94a3b8" fontSize={9} fontWeight="bold" />
+                    </ReferenceLine>
+                  )}
+                  {elbow95 && (
+                    <ReferenceLine x={elbow95} stroke="#818cf8" strokeDasharray="3 3">
+                      <Label value={t.pca_elbow_95} position="top" fill="#6366f1" fontSize={9} fontWeight="bold" />
+                    </ReferenceLine>
+                  )}
+
                   <Area 
                     type="monotone" 
                     dataKey="value" 
@@ -454,17 +511,26 @@ const PCATab = ({ t, lang }: { t: any, lang: Lang }) => {
 const ESMTab = ({ t }: { t: any }) => {
   const [child, setChild] = useState<{f: File, p: string} | null>(null);
   const [adult, setAdult] = useState<{f: File, p: string} | null>(null);
-  const [result, setResult] = useState<{similarity: number, distance: number} | null>(null);
+  const [result, setResult] = useState<{similarity: number, distance: number, child_detected: boolean, adult_detected: boolean, processing_time: number} | null>(null);
   const [loading, setLoading] = useState(false);
   const [training, setTraining] = useState(false);
   const [trained, setTrained] = useState(false);
+  const [eigenfaces, setEigenfaces] = useState<string[]>([]);
 
   const train = async () => {
     setTraining(true);
     try {
       await axios.post(`${API_BASE}/api/esm/train`);
       setTrained(true);
+      fetchEigenfaces();
     } catch (e) { console.error(e); } finally { setTraining(false); }
+  };
+
+  const fetchEigenfaces = async () => {
+    try {
+      const { data } = await axios.get(`${API_BASE}/api/esm/eigenfaces?n=12`);
+      setEigenfaces(data.eigenfaces);
+    } catch (e) { console.error(e); }
   };
 
   const compare = async () => {
@@ -514,22 +580,66 @@ const ESMTab = ({ t }: { t: any }) => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <FaceBox label={t.esm_source} val={child} set={setChild} color="indigo" t={t} />
-        <FaceBox label={t.esm_target} val={adult} set={setAdult} color="slate" t={t} />
+      {trained && eigenfaces.length > 0 && (
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 animate-in fade-in duration-1000">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
+                <Zap className="w-4 h-4" />
+              </div>
+              <h3 className="text-lg font-bold">{t.esm_eigenface_title}</h3>
+            </div>
+            <div className="flex gap-2">
+              <span className="px-3 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded-full uppercase tracking-wider">Top 12 Principal Components</span>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-3">
+            {eigenfaces.map((img, i) => (
+              <div key={i} className="aspect-square bg-slate-50 rounded-lg overflow-hidden border border-slate-100 group">
+                <img src={img} className="w-full h-full object-cover grayscale opacity-60 group-hover:opacity-100 transition-opacity" />
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-[10px] text-slate-400 font-medium italic">{t.esm_eigenface_desc}</p>
+        </div>
+      )}
+
+      <div className={`relative ${!trained ? 'opacity-40 grayscale pointer-events-none select-none' : ''} transition-all duration-500`}>
+        {!trained && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center">
+            <div className="bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full border border-slate-200 shadow-sm flex items-center gap-2">
+              <Lock className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{t.esm_alert_title}</span>
+            </div>
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <FaceBox label={t.esm_source} val={child} set={setChild} color="indigo" t={t} />
+          <FaceBox label={t.esm_target} val={adult} set={setAdult} color="slate" t={t} />
+        </div>
+
+        <div className="flex flex-col items-center pt-8">
+          <button 
+            onClick={compare}
+            disabled={!child || !adult || loading || !trained}
+            className="px-12 py-5 bg-indigo-600 text-white rounded-2xl text-base font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-40 flex items-center gap-4"
+          >
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>{t.esm_btn_compare} <RefreshCw className="w-4 h-4" /></>}
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-col items-center pt-8">
-        <button 
-          onClick={compare}
-          disabled={!child || !adult || loading || !trained}
-          className="px-12 py-5 bg-indigo-600 text-white rounded-2xl text-base font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-40 flex items-center gap-4"
-        >
-          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>{t.esm_btn_compare} <RefreshCw className="w-4 h-4" /></>}
-        </button>
+      {result && (
+        <div className="space-y-8 animate-in zoom-in-95 duration-500">
+          {( !result.child_detected || !result.adult_detected ) && (
+            <div className="max-w-2xl mx-auto bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-center gap-3">
+              <AlertCircle className="w-4 h-4 text-amber-500" />
+              <span className="text-[11px] font-bold text-amber-700 uppercase tracking-widest">{t.esm_no_face_warning}</span>
+            </div>
+          )}
 
-        {result && (
-          <div className="mt-16 w-full max-w-2xl bg-white rounded-3xl p-10 shadow-xl border border-slate-100 animate-in zoom-in-95 duration-500 text-center relative overflow-hidden">
+          <div className="w-full max-w-2xl mx-auto bg-white rounded-3xl p-10 shadow-xl border border-slate-100 text-center relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1.5 bg-slate-50">
               <div className="h-full bg-indigo-600 transition-all duration-1000 ease-out" style={{ width: `${result.similarity}%` }} />
             </div>
@@ -539,21 +649,24 @@ const ESMTab = ({ t }: { t: any }) => {
               {Math.round(result.similarity)}<span className="text-4xl text-slate-200 ml-1">%</span>
             </div>
             
-            <div className="inline-flex items-center gap-6 px-6 py-3 bg-slate-50 rounded-full border border-slate-100">
+            <div className="grid grid-cols-3 gap-6 px-6 py-4 bg-slate-50 rounded-2xl border border-slate-100">
               <div className="text-left">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">{t.esm_dist}</p>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-tight">{t.esm_dist}</p>
                 <p className="text-sm font-bold text-slate-900">{result.distance.toFixed(4)}</p>
               </div>
-              <div className="w-[1px] h-8 bg-slate-200" />
-              <div className="text-left">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">{t.esm_conf}</p>
+              <div className="text-left border-l border-slate-200 pl-6">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-tight">{t.esm_conf}</p>
                 <p className="text-sm font-bold text-slate-900">{result.similarity > 70 ? t.esm_high : result.similarity > 40 ? t.esm_mod : t.esm_low}</p>
+              </div>
+              <div className="text-left border-l border-slate-200 pl-6">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-tight">{t.esm_processing_time}</p>
+                <p className="text-sm font-bold text-emerald-600">{result.processing_time}ms</p>
               </div>
             </div>
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </div> 
   );
 };
 

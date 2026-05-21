@@ -20,16 +20,18 @@ Web application for Principal Component Analysis (PCA) featuring Image Compressi
 - Node.js & npm
 
 ### Backend Setup
-1. Navigate to the `backend` directory:
+1. Create a virtual environment (optional but recommended):
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+2. Install dependencies from the root directory:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Navigate to the `backend` directory and run the server:
    ```bash
    cd backend
-   ```
-2. Install dependencies:
-   ```bash
-   pip install fastapi uvicorn numpy opencv-python scikit-learn python-multipart pillow
-   ```
-3. Run the server:
-   ```bash
    python main.py
    ```
    The API will be available at `http://localhost:8000`.

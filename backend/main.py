@@ -1,4 +1,5 @@
 import io
+import time
 import base64
 import numpy as np
 import cv2
@@ -41,30 +42,35 @@ def pca_compress_2d(X, k):
     
     return X_reconstructed, explained_variance.tolist()
 
-def compress_image(image_bytes, k):
+def compress_image(image_bytes, k, grayscale=False):
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError("Invalid image")
-        
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    h, w, c = img_rgb.shape
     
-    reconstructed_channels = []
-    variance_ratios = []
-    
-    for i in range(3):
-        channel = img_rgb[:, :, i]
-        reconstructed, v_ratio = pca_compress_2d(channel, k)
+    # Convert to grayscale if requested
+    if grayscale:
+        img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        reconstructed, v_ratio = pca_compress_2d(img_gray, k)
         reconstructed = np.clip(reconstructed, 0, 255).astype(np.uint8)
-        reconstructed_channels.append(reconstructed)
-        variance_ratios.append(v_ratio)
-    
-    # Use average variance ratio for simplicity in EDA
-    avg_variance_ratio = np.mean(variance_ratios, axis=0).tolist()
-    
-    reconstructed_img = np.stack(reconstructed_channels, axis=2)
-    _, buffer = cv2.imencode('.png', cv2.cvtColor(reconstructed_img, cv2.COLOR_RGB2BGR))
+        avg_variance_ratio = v_ratio
+        reconstructed_img = cv2.cvtColor(reconstructed, cv2.COLOR_GRAY2BGR)
+    else:
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        reconstructed_channels = []
+        variance_ratios = []
+        
+        for i in range(3):
+            channel = img_rgb[:, :, i]
+            reconstructed, v_ratio = pca_compress_2d(channel, k)
+            reconstructed = np.clip(reconstructed, 0, 255).astype(np.uint8)
+            reconstructed_channels.append(reconstructed)
+            variance_ratios.append(v_ratio)
+        
+        avg_variance_ratio = np.mean(variance_ratios, axis=0).tolist()
+        reconstructed_img = cv2.cvtColor(np.stack(reconstructed_channels, axis=2), cv2.COLOR_RGB2BGR)
+
+    _, buffer = cv2.imencode('.png', reconstructed_img)
     encoded_img = base64.b64encode(buffer).decode('utf-8')
     
     return encoded_img, avg_variance_ratio
@@ -74,13 +80,20 @@ def compress_image(image_bytes, k):
 # =====================================================
 
 @app.post("/api/compress")
-async def api_compress(file: UploadFile = File(...), k: int = Form(...)):
+async def api_compress(
+    file: UploadFile = File(...), 
+    k: int = Form(...), 
+    grayscale: bool = Form(False)
+):
+    start_time = time.time()
     try:
         contents = await file.read()
-        encoded_img, variance_data = compress_image(contents, k)
+        encoded_img, variance_data = compress_image(contents, k, grayscale)
+        processing_time = (time.time() - start_time) * 1000 # ms
         return {
             "compressed_image": f"data:image/png;base64,{encoded_img}",
-            "variance_data": variance_data[:100] # Limit to top 100 for chart
+            "variance_data": variance_data[:100], # Limit to top 100 for chart
+            "processing_time": round(processing_time, 2)
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -98,37 +111,88 @@ async def train_esm():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/esm/eigenfaces")
+async def get_eigenfaces(n: int = 10):
+    global esm_model
+    if esm_model is None:
+        raise HTTPException(status_code=400, detail="ESM model not trained.")
+    
+    try:
+        eigenfaces = []
+        for i in range(min(n, esm_model.n_components_)):
+            # Normalize component to 0-255 for visualization
+            comp = esm_model.components_[i].reshape(64, 64)
+            comp_norm = cv2.normalize(comp, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            _, buffer = cv2.imencode('.png', comp_norm)
+            encoded = base64.b64encode(buffer).decode('utf-8')
+            eigenfaces.append(f"data:image/png;base64,{encoded}")
+        
+        return {"eigenfaces": eigenfaces}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Load Haar Cascade for face detection
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+
+def process_face_aligned(contents):
+    nparr = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError("Invalid image")
+        
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # Detect faces
+    faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+    
+    detected = False
+    if len(faces) > 0:
+        # Take the largest face
+        (x, y, w, h) = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)[0]
+        face_img = gray[y:y+h, x:x+w]
+        detected = True
+    else:
+        # Fallback to center crop if no face detected
+        h, w = gray.shape
+        side = min(h, w)
+        face_img = gray[(h-side)//2:(h+side)//2, (w-side)//2:(w+side)//2]
+
+    # Resize to match Olivetti dataset (64x64)
+    img_resized = cv2.resize(face_img, (64, 64))
+    return img_resized.flatten() / 255.0, detected
+
 @app.post("/api/esm/compare")
 async def compare_faces(child_file: UploadFile = File(...), adult_file: UploadFile = File(...)):
     global esm_model
     if esm_model is None:
         raise HTTPException(status_code=400, detail="ESM model not trained. Call /api/esm/train first.")
     
+    start_time = time.time()
     try:
-        def process_face(file):
-            contents = file.file.read()
-            nparr = np.frombuffer(contents, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-            img_resized = cv2.resize(img, (64, 64))
-            return img_resized.flatten() / 255.0
+        child_contents = await child_file.read()
+        adult_contents = await adult_file.read()
 
-        child_flat = process_face(child_file)
-        adult_flat = process_face(adult_file)
+        child_flat, child_detected = process_face_aligned(child_contents)
+        adult_flat, adult_detected = process_face_aligned(adult_contents)
         
         # Project into subspace
         child_proj = esm_model.transform([child_flat])
-        adult_proj = esm_model.transform([adult_flat])
+        adult_proj = esm_model.transform([adult_proj]) if 'adult_proj' in locals() else esm_model.transform([adult_flat])
         
         # Calculate distance
         dist = np.linalg.norm(child_proj - adult_proj)
         
-        # Convert distance to a simple "similarity" score (0 to 100)
-        # Using a simple heuristic for Olivetti space distance
-        similarity = max(0, 100 - (dist * 10)) 
+        # Heuristic similarity: Olivetti space distance usually 5-25
+        similarity = max(0, 100 - (dist * 8)) 
+        
+        processing_time = (time.time() - start_time) * 1000 # ms
         
         return {
             "similarity": round(float(similarity), 2),
-            "distance": round(float(dist), 4)
+            "distance": round(float(dist), 4),
+            "processing_time": round(processing_time, 2),
+            "child_detected": child_detected,
+            "adult_detected": adult_detected
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
