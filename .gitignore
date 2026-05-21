@@ -25,3 +25,5 @@ conductor/
 *.sw?
 
 GEMINI.md
+venv/
+.venv/
